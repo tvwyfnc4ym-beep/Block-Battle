@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1">
+
+<title>Block Battle</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+
+    margin: 0;
+
+    background: #111;
+
+    color: white;
+
+    font-family: Arial, sans-serif;
+
+    text-align: center;
+}
+
+h1 {
+
+    margin: 12px 0;
+
+    font-size: 32px;
+}
+
+#status {
+
+    color: #7de7ff;
+
+    margin: 8px;
+}
+
+#health {
+
+    font-size: 20px;
+
+    font-weight: bold;
+
+    margin: 8px;
+}
+
+#instructions {
+
+    color: #ccc;
+
+    margin: 8px;
+}
+
+canvas {
+
+    width: min(900px, 96vw);
+
+    height: auto;
+
+    border: 3px solid white;
+
+    background: #222;
+
+    display: block;
+
+    margin: 12px auto;
+
+    cursor: crosshair;
+}
+
+#players {
+
+    color: #bbb;
+
+    margin: 10px;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<h1>
+🧱 BLOCK BATTLE
+</h1>
+
+
+<div id="status">
+Connecting...
+</div>
+
+
+<div id="health">
+❤️ Health: 100
+</div>
+
+
+<div id="instructions">
+
+WASD / Arrow Keys = Move
+&nbsp; | &nbsp;
+Mouse = Aim
+&nbsp; | &nbsp;
+Click / Space = Shoot
+
+</div>
+
+
+<canvas
+    id="game"
+    width="900"
+    height="500">
+</canvas>
+
+
+<div id="players">
+Players online: 0
+</div>
+
+
+<script src="/socket.io/socket.io.js"></script>
+
+
+<script>
+
+
+// =================================
+// CONNECT TO SERVER
+// =================================
+
+const socket = io();
+
+
+const canvas =
+    document.getElementById(
+        "game"
+    );
+
+
+const ctx =
+    canvas.getContext("2d");
+
+
+const statusText =
+    document.getElementById(
+        "status"
+    );
+
+
+const healthText =
+    document.getElementById(
+        "health"
+    );
+
+
+const playersText =
+    document.getElementById(
+        "players"
+    );
+
+
+let myId = null;
+
+
+let players = {};
+
+
+let orbs = [];
+
+
+let walls = [];
+
+
+let worldWidth = 3000;
+
+
+let worldHeight = 2000;
+
+
+// =================================
+// CAMERA
+// =================================
+
+let camera = {
+
+    x: 0,
+
+    y: 0
+};
+
+
+// =================================
+// KEYBOARD
+// =================================
+
+const keys = {};
+
+
+// =================================
+// MOUSE
+// =================================
+
+let mouseX = 450;
+
+let mouseY = 250;
+
+
+// =================================
+// CONNECTION
+// =================================
+
+socket.on(
+    "connect",
+    () => {
+
+        statusText.textContent =
+            "🟢 Connected to Block Battle!";
+    }
+);
+
+
+socket.on(
+    "disconnect",
+    () => {
+
+        statusText.textContent =
+            "🔴 Disconnected...";
+    }
+);
+
+
+socket.on(
+    "welcome",
+    data => {
+
+        myId = data.id;
+
+        worldWidth =
+            data.worldWidth;
+
+        worldHeight =
+            data.worldHeight;
+    }
+);
+
+
+socket.on(
+    "state",
+    state => {
+
+        players =
+            state.players;
+
+        orbs =
+            state.orbs;
+
+        walls =
+            state.walls;
+
+        worldWidth =
+            state.worldWidth;
+
+        worldHeight =
+            state.worldHeight;
+
+
+        const me =
+            players[myId];
+
+
+        if (me) {
+
+            healthText.textContent =
+                "❤️ Health: " +
+                me.health;
+        }
+
+
+        playersText.textContent =
+            "Players online: " +
+            Object.keys(
+                players
+            ).length;
+    }
+);
+
+
+// =================================
+// KEY DOWN
+// =================================
+
+document.addEventListener(
+    "keydown",
+    event => {
+
+        const key =
+            event.key.toLowerCase();
+
+
+        keys[key] = true;
+
+
+        if (
+            key === " " &&
+            !event.repeat
+        ) {
+
+            socket.emit(
+                "shoot"
+            );
+        }
+    }
+);
+
+
+// =================================
+// KEY UP
+// =================================
+
+document.addEventListener(
+    "keyup",
+    event => {
+
+        keys[
+            event.key.toLowerCase()
+        ] = false;
+    }
+);
+
+
+// =================================
+// MOUSE AIM
+// =================================
+
+canvas.addEventListener(
+    "mousemove",
+    event => {
+
+        const rect =
+            canvas.getBoundingClientRect();
+
+
+        mouseX =
+            (event.clientX -
+                rect.left)
+            *
+            canvas.width /
+            rect.width;
+
+
+        mouseY =
+            (event.clientY -
+                rect.top)
+            *
+            canvas.height /
+            rect.height;
+    }
+);
+
+
+// =================================
+// SHOOT
+// =================================
+
+canvas.addEventListener(
+    "mousedown",
+    () => {
+
+        socket.emit(
+            "shoot"
+        );
+    }
+);
+
+
+// =================================
+// SEND INPUT
+// =================================
+
+setInterval(
+    () => {
+
+        const me =
+            players[myId];
+
+
+        if (!me) {
+            return;
+        }
+
+
+        const screenX =
+            me.x -
+            camera.x +
+            15;
+
+
+        const screenY =
+            me.y -
+            camera.y +
+            15;
+
+
+        const aimX =
+            mouseX -
+            screenX;
+
+
+        const aimY =
+            mouseY -
+            screenY;
+
+
+        socket.emit(
+            "input",
+            {
+
+                up:
+                    keys["w"] ||
+                    keys["arrowup"],
+
+                down:
+                    keys["s"] ||
+                    keys["arrowdown"],
+
+                left:
+                    keys["a"] ||
+                    keys["arrowleft"],
+
+                right:
+                    keys["d"] ||
+                    keys["arrowright"],
+
+                aimX,
+                aimY
+            }
+        );
+
+    },
+    1000 / 30
+);
+
+
+// =================================
+// UPDATE CAMERA
+// =================================
+
+function updateCamera() {
+
+    const me =
+        players[myId];
+
+
+    if (!me) {
+        return;
+    }
+
+
+    camera.x =
+        me.x -
+        canvas.width / 2 +
+        15;
+
+
+    camera.y =
+        me.y -
+        canvas.height / 2 +
+        15;
+
+
+    camera.x =
+        Math.max(
+            0,
+            Math.min(
+                worldWidth -
+                canvas.width,
+                camera.x
+            )
+        );
+
+
+    camera.y =
+        Math.max(
+            0,
+            Math.min(
+                worldHeight -
+                canvas.height,
+                camera.y
+            )
+        );
+}
+
+
+// =================================
+// DRAW WORLD
+// =================================
+
+function drawWorld() {
+
+    ctx.fillStyle =
+        "#26303a";
+
+
+    ctx.fillRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+
+    // Grid
+
+    const gridSize = 50;
+
+
+    ctx.strokeStyle =
+        "#303b46";
+
+
+    ctx.lineWidth = 1;
+
+
+    const startX =
+        -(camera.x % gridSize);
+
+
+    const startY =
+        -(camera.y % gridSize);
+
+
+    for (
+        let x = startX;
+        x < canvas.width;
+        x += gridSize
+    ) {
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            x,
+            0
+        );
+
+        ctx.lineTo(
+            x,
+            canvas.height
+        );
+
+        ctx.stroke();
+    }
+
+
+    for (
+        let y = startY;
+        y < canvas.height;
+        y += gridSize
+    ) {
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            0,
+            y
+        );
+
+        ctx.lineTo(
+            canvas.width,
+            y
+        );
+
+        ctx.stroke();
+    }
+}
+
+
+// =================================
+// DRAW WALLS
+// =================================
+
+function drawWalls() {
+
+    for (
+        const wall of walls
+    ) {
+
+        const x =
+            wall.x -
+            camera.x;
+
+
+        const y =
+            wall.y -
+            camera.y;
+
+
+        ctx.fillStyle =
+            "#596777";
+
+
+        ctx.fillRect(
+            x,
+            y,
+            wall.w,
+            wall.h
+        );
+
+
+        ctx.strokeStyle =
+            "#b9c8d8";
+
+
+        ctx.lineWidth = 2;
+
+
+        ctx.strokeRect(
+            x,
+            y,
+            wall.w,
+            wall.h
+        );
+    }
+}
+
+
+// =================================
+// DRAW PROJECTILES
+// =================================
+
+function drawOrbs() {
+
+    for (
+        const orb of orbs
+    ) {
+
+        const x =
+            orb.x -
+            camera.x;
+
+
+        const y =
+            orb.y -
+            camera.y;
+
+
+        ctx.beginPath();
+
+
+        ctx.arc(
+            x,
+            y,
+            7,
+            0,
+            Math.PI * 2
+        );
+
+
+        ctx.fillStyle =
+            "#5deaff";
+
+
+        ctx.shadowColor =
+            "#5deaff";
+
+
+        ctx.shadowBlur = 15;
+
+
+        ctx.fill();
+
+
+        ctx.shadowBlur = 0;
+    }
+}
+
+
+// =================================
+// DRAW PLAYERS
+// =================================
+
+function drawPlayers() {
+
+    for (
+        const id in players
+    ) {
+
+        const p =
+            players[id];
+
+
+        if (
+            p.health <= 0
+        ) {
+            continue;
+        }
+
+
+        const x =
+            p.x -
+            camera.x;
+
+
+        const y =
+            p.y -
+            camera.y;
+
+
+        // Player
+
+        ctx.fillStyle =
+            p.color;
+
+
+        ctx.fillRect(
+            x,
+            y,
+            30,
+            30
+        );
+
+
+        // Outline
+
+        ctx.strokeStyle =
+            id === myId
+                ? "white"
+                : "#aaa";
+
+
+        ctx.lineWidth =
+            id === myId
+                ? 3
+                : 1;
+
+
+        ctx.strokeRect(
+            x,
+            y,
+            30,
+            30
+        );
+
+
+        // Health bar background
+
+        ctx.fillStyle =
+            "#551d25";
+
+
+        ctx.fillRect(
+            x - 2,
+            y - 12,
+            34,
+            6
+        );
+
+
+        // Health bar
+
+        ctx.fillStyle =
+            "#39ed76";
+
+
+        ctx.fillRect(
+            x - 2,
+            y - 12,
+            34 *
+            (p.health / 100),
+            6
+        );
+
+
+        // Name
+
+        ctx.fillStyle =
+            "white";
+
+
+        ctx.font =
+            "11px Arial";
+
+
+        ctx.textAlign =
+            "center";
+
+
+        ctx.fillText(
+            id === myId
+                ? "YOU"
+                : "PLAYER",
+            x + 15,
+            y + 43
+        );
+    }
+
+
+    ctx.textAlign =
+        "left";
+}
+
+
+// =================================
+// GAME LOOP
+// =================================
+
+function gameLoop() {
+
+    updateCamera();
+
+
+    drawWorld();
+
+
+    drawWalls();
+
+
+    drawOrbs();
+
+
+    drawPlayers();
+
+
+    requestAnimationFrame(
+        gameLoop
+    );
+}
+
+
+gameLoop();
+
+
+</script>
+
+</body>
+
+</html>
